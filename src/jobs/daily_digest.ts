@@ -117,8 +117,7 @@ export class DailyDigestJob {
           if (!dryRun) {
             await this.createCalendarEventIfNeeded(
               email,
-              createdEventIds,
-              classification.senderTrusted
+              createdEventIds
             );
           }
           break;
@@ -277,8 +276,7 @@ export class DailyDigestJob {
 
   private async createCalendarEventIfNeeded(
     email: any,
-    createdEventIds: string[],
-    senderTrusted: boolean | undefined
+    createdEventIds: string[]
   ): Promise<void> {
     // Skip if calendar event already created
     if (this.stateStore.hasCalendarEvent(email.id)) {

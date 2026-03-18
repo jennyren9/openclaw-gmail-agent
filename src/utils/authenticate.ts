@@ -10,7 +10,7 @@ import { StateStore } from "../core/state_store.js";
  */
 
 const config = getConfig();
-const stateStore = new StateStore(config.databasePath);
+const stateStore = new StateStore();
 
 async function authenticate(): Promise<void> {
   console.log("🔐 OpenClaw Gmail Agent - OAuth Authentication\n");
@@ -26,8 +26,6 @@ async function authenticate(): Promise<void> {
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/gmail.send",
   ];
-
-  const calendarScopes = ["https://www.googleapis.com/auth/calendar"];
 
   // Create local server for OAuth callback
   const server = http.createServer(async (req, res) => {
@@ -71,8 +69,8 @@ async function authenticate(): Promise<void> {
       stateStore.storeOAuthToken(
         "gmail",
         tokens.access_token!,
-        tokens.refresh_token,
-        tokens.expiry_date,
+        tokens.refresh_token ?? undefined,
+        tokens.expiry_date ?? undefined,
         gmailScopes
       );
       console.log("✓ Gmail tokens saved\n");
@@ -162,8 +160,8 @@ async function authenticateCalendar(): Promise<void> {
       stateStore.storeOAuthToken(
         "calendar",
         tokens.access_token!,
-        tokens.refresh_token,
-        tokens.expiry_date,
+        tokens.refresh_token ?? undefined,
+        tokens.expiry_date ?? undefined,
         calendarScopes
       );
       console.log("✓ Google Calendar tokens saved");

@@ -32,11 +32,12 @@ export class EventExtractor {
     }
 
     try {
-      const event: ExtractedEvent = {
+      const event: any = {
         messageId: email.id,
         title: email.subject,
         timezone: "America/Los_Angeles",
         confidence: 0.95,
+        startTime: new Date(), // Default to now, will be overwritten if found
       };
 
       // Parse SUMMARY
@@ -124,11 +125,12 @@ export class EventExtractor {
       return null;
     }
 
-    const event: ExtractedEvent = {
+    const event: any = {
       messageId: email.id,
       title: subject,
       timezone: "America/Los_Angeles",
       confidence: 0.6,
+      startTime: new Date(), // Will be overwritten if found
     };
 
     // Try to extract start time

@@ -1,130 +1,113 @@
-import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 import {
   ProcessedMessageRecord,
   DigestRecord,
   EmailCategory,
-} from "./types/index.js";
+} from "../types/index.js";
 
 /**
- * SQLite-based state store for tracking processed emails, digests, and calendar events
+ * JSON file-based state store for tracking processed emails, digests, and calendar events
+ * (Pure JavaScript alternative to SQLite - no native compilation required)
  */
 export class StateStore {
-  private db: Database.Database;
+  private dataDir: string;
+  private messagesFile: string;
+  private digestsFile: string;
+  private tokensFile: string;
 
-  constructor(databasePath: string) {
+  constructor() {
+    // Use data directory for JSON files
+    this.dataDir = path.join(process.cwd(), "data");
+    
     // Ensure directory exists
-    const dir = path.dirname(databasePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    if (!fs.existsSync(this.dataDir)) {
+      fs.mkdirSync(this.dataDir, { recursive: true });
     }
 
-    this.db = new Database(databasePath);
-    this.db.pragma("journal_mode = WAL");
+    this.messagesFile = path.join(this.dataDir, "messages.json");
+    this.digestsFile = path.join(this.dataDir, "digests.json");
+    this.tokensFile = path.join(this.dataDir, "tokens.json");
+
     this.initialize();
   }
 
   private initialize(): void {
-    // Create tables if they don't exist
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS processed_messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        messageId TEXT UNIQUE NOT NULL,
-        threadId TEXT NOT NULL,
-        processedAt INTEGER NOT NULL,
-        category TEXT NOT NULL,
-        categoryClusters TEXT,
-        summarized INTEGER DEFAULT 0,
-        calendarEventId TEXT,
-        labelsApplied TEXT
-      );
+    // Initialize JSON files if they don't exist
+    if (!fs.existsSync(this.messagesFile)) {
+      this.writeJson(this.messagesFile, []);
+    }
+    if (!fs.existsSync(this.digestsFile)) {
+      this.writeJson(this.digestsFile, []);
+    }
+    if (!fs.existsSync(this.tokensFile)) {
+      this.writeJson(this.tokensFile, []);
+    }
+  }
 
-      CREATE TABLE IF NOT EXISTS digests (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        digestId TEXT UNIQUE NOT NULL,
-        date INTEGER NOT NULL,
-        recipient TEXT NOT NULL,
-        emailMessageId TEXT,
-        messageIds TEXT NOT NULL,
-        createdEventIds TEXT,
-        sentAt INTEGER NOT NULL
-      );
+  private readJson(filePath: string): any {
+    try {
+      const data = fs.readFileSync(filePath, "utf-8");
+      return JSON.parse(data);
+    } catch {
+      return filePath.includes("messages") ? [] : [];
+    }
+  }
 
-      CREATE TABLE IF NOT EXISTS oauth_tokens (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        account TEXT UNIQUE NOT NULL,
-        accessToken TEXT NOT NULL,
-        refreshToken TEXT,
-        expireTime INTEGER,
-        scope TEXT NOT NULL,
-        updatedAt INTEGER NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_processed_messages_messageId 
-        ON processed_messages(messageId);
-      CREATE INDEX IF NOT EXISTS idx_processed_messages_threadId 
-        ON processed_messages(threadId);
-      CREATE INDEX IF NOT EXISTS idx_digests_date 
-        ON digests(date);
-      CREATE INDEX IF NOT EXISTS idx_oauth_tokens_account 
-        ON oauth_tokens(account);
-    `);
+  private writeJson(filePath: string, data: any): void {
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
   }
 
   /**
    * Record a processed email message
    */
   recordProcessedMessage(record: ProcessedMessageRecord): void {
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO processed_messages
-      (messageId, threadId, processedAt, category, categoryClusters, summarized, calendarEventId, labelsApplied)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
-      record.messageId,
-      record.threadId,
-      record.processedAt.getTime(),
-      record.category,
-      record.categoryClusters ? JSON.stringify(record.categoryClusters) : null,
-      record.summarized ? 1 : 0,
-      record.calendarEventId || null,
-      JSON.stringify(record.labelsApplied)
-    );
+    const messages = this.readJson(this.messagesFile);
+    
+    // Remove if exists (update)
+    const filtered = messages.filter((m: any) => m.messageId !== record.messageId);
+    
+    // Add new record
+    filtered.push({
+      messageId: record.messageId,
+      threadId: record.threadId,
+      processedAt: record.processedAt.toISOString(),
+      category: record.category,
+      categoryClusters: record.categoryClusters,
+      summarized: record.summarized,
+      calendarEventId: record.calendarEventId,
+      labelsApplied: record.labelsApplied,
+    });
+    
+    this.writeJson(this.messagesFile, filtered);
   }
 
   /**
    * Check if a message has been processed
    */
   isMessageProcessed(messageId: string): boolean {
-    const stmt = this.db.prepare(
-      "SELECT 1 FROM processed_messages WHERE messageId = ?"
-    );
-    return stmt.get(messageId) !== undefined;
+    const messages = this.readJson(this.messagesFile);
+    return messages.some((m: any) => m.messageId === messageId);
   }
 
   /**
    * Get a processed message record
    */
   getProcessedMessage(messageId: string): ProcessedMessageRecord | null {
-    const stmt = this.db.prepare(
-      "SELECT * FROM processed_messages WHERE messageId = ?"
-    );
-    const row = stmt.get(messageId) as any;
-    if (!row) return null;
+    const messages = this.readJson(this.messagesFile);
+    const msg = messages.find((m: any) => m.messageId === messageId);
+    
+    if (!msg) return null;
 
     return {
-      messageId: row.messageId,
-      threadId: row.threadId,
-      processedAt: new Date(row.processedAt),
-      category: row.category as EmailCategory,
-      categoryClusters: row.categoryClusters
-        ? JSON.parse(row.categoryClusters)
-        : undefined,
-      summarized: row.summarized === 1,
-      calendarEventId: row.calendarEventId,
-      labelsApplied: JSON.parse(row.labelsApplied),
+      messageId: msg.messageId,
+      threadId: msg.threadId,
+      processedAt: new Date(msg.processedAt),
+      category: msg.category as EmailCategory,
+      categoryClusters: msg.categoryClusters,
+      summarized: msg.summarized,
+      calendarEventId: msg.calendarEventId,
+      labelsApplied: msg.labelsApplied,
     };
   }
 
@@ -132,93 +115,97 @@ export class StateStore {
    * Mark a message as summarized
    */
   markMessageSummarized(messageId: string): void {
-    const stmt = this.db.prepare(
-      "UPDATE processed_messages SET summarized = 1 WHERE messageId = ?"
-    );
-    stmt.run(messageId);
+    const messages = this.readJson(this.messagesFile);
+    const msg = messages.find((m: any) => m.messageId === messageId);
+    if (msg) {
+      msg.summarized = true;
+      this.writeJson(this.messagesFile, messages);
+    }
   }
 
   /**
    * Record a calendar event creation
    */
   recordCalendarEventCreation(messageId: string, eventId: string): void {
-    const stmt = this.db.prepare(
-      "UPDATE processed_messages SET calendarEventId = ? WHERE messageId = ?"
-    );
-    stmt.run(eventId, messageId);
+    const messages = this.readJson(this.messagesFile);
+    const msg = messages.find((m: any) => m.messageId === messageId);
+    if (msg) {
+      msg.calendarEventId = eventId;
+      this.writeJson(this.messagesFile, messages);
+    }
   }
 
   /**
    * Check if a calendar event was already created for a message
    */
   hasCalendarEvent(messageId: string): boolean {
-    const stmt = this.db.prepare(
-      "SELECT calendarEventId FROM processed_messages WHERE messageId = ?"
-    );
-    const row = stmt.get(messageId) as any;
-    return row && row.calendarEventId !== null;
+    const messages = this.readJson(this.messagesFile);
+    const msg = messages.find((m: any) => m.messageId === messageId);
+    return msg && msg.calendarEventId !== null;
   }
 
   /**
    * Get calendar event ID for a message
    */
   getCalendarEventId(messageId: string): string | null {
-    const stmt = this.db.prepare(
-      "SELECT calendarEventId FROM processed_messages WHERE messageId = ?"
-    );
-    const row = stmt.get(messageId) as any;
-    return row?.calendarEventId || null;
+    const messages = this.readJson(this.messagesFile);
+    const msg = messages.find((m: any) => m.messageId === messageId);
+    return msg?.calendarEventId || null;
   }
 
   /**
    * Record a sent digest
    */
   recordDigest(digest: DigestRecord): void {
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO digests
-      (digestId, date, recipient, emailMessageId, messageIds, createdEventIds, sentAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
-      digest.digestId,
-      digest.date.getTime(),
-      digest.recipient,
-      digest.emailMessageId || null,
-      JSON.stringify(digest.messageIds),
-      JSON.stringify(digest.createdEventIds),
-      digest.sentAt.getTime()
-    );
+    const digests = this.readJson(this.digestsFile);
+    
+    // Remove if exists (update)
+    const filtered = digests.filter((d: any) => d.digestId !== digest.digestId);
+    
+    // Add new record
+    filtered.push({
+      digestId: digest.digestId,
+      date: digest.date.toISOString(),
+      recipient: digest.recipient,
+      emailMessageId: digest.emailMessageId,
+      messageIds: digest.messageIds,
+      createdEventIds: digest.createdEventIds,
+      sentAt: digest.sentAt.toISOString(),
+    });
+    
+    this.writeJson(this.digestsFile, filtered);
   }
 
   /**
    * Get digest for a specific date
    */
   getDigestForDate(date: Date, recipient: string): DigestRecord | null {
+    const digests = this.readJson(this.digestsFile);
+    
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const stmt = this.db.prepare(
-      "SELECT * FROM digests WHERE date >= ? AND date <= ? AND recipient = ?"
-    );
-    const row = stmt.get(
-      startOfDay.getTime(),
-      endOfDay.getTime(),
-      recipient
-    ) as any;
+    const digest = digests.find((d: any) => {
+      const digestDate = new Date(d.date);
+      return (
+        digestDate >= startOfDay &&
+        digestDate <= endOfDay &&
+        d.recipient === recipient
+      );
+    });
 
-    if (!row) return null;
+    if (!digest) return null;
 
     return {
-      digestId: row.digestId,
-      date: new Date(row.date),
-      recipient: row.recipient,
-      emailMessageId: row.emailMessageId,
-      messageIds: JSON.parse(row.messageIds),
-      createdEventIds: JSON.parse(row.createdEventIds),
-      sentAt: new Date(row.sentAt),
+      digestId: digest.digestId,
+      date: new Date(digest.date),
+      recipient: digest.recipient,
+      emailMessageId: digest.emailMessageId,
+      messageIds: digest.messageIds,
+      createdEventIds: digest.createdEventIds,
+      sentAt: new Date(digest.sentAt),
     };
   }
 
@@ -239,20 +226,22 @@ export class StateStore {
     expireTime: number | undefined,
     scope: string[]
   ): void {
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO oauth_tokens
-      (account, accessToken, refreshToken, expireTime, scope, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
+    const tokens = this.readJson(this.tokensFile);
+    
+    // Remove if exists (update)
+    const filtered = tokens.filter((t: any) => t.account !== account);
+    
+    // Add new token
+    filtered.push({
       account,
       accessToken,
-      refreshToken || null,
-      expireTime || null,
-      JSON.stringify(scope),
-      Date.now()
-    );
+      refreshToken,
+      expireTime,
+      scope,
+      updatedAt: new Date().toISOString(),
+    });
+    
+    this.writeJson(this.tokensFile, filtered);
   }
 
   /**
@@ -264,16 +253,16 @@ export class StateStore {
     expireTime?: number;
     scope: string[];
   } | null {
-    const stmt = this.db.prepare("SELECT * FROM oauth_tokens WHERE account = ?");
-    const row = stmt.get(account) as any;
+    const tokens = this.readJson(this.tokensFile);
+    const token = tokens.find((t: any) => t.account === account);
 
-    if (!row) return null;
+    if (!token) return null;
 
     return {
-      accessToken: row.accessToken,
-      refreshToken: row.refreshToken,
-      expireTime: row.expireTime,
-      scope: JSON.parse(row.scope),
+      accessToken: token.accessToken,
+      refreshToken: token.refreshToken,
+      expireTime: token.expireTime,
+      scope: token.scope,
     };
   }
 
@@ -284,35 +273,34 @@ export class StateStore {
     startDate: Date,
     endDate: Date
   ): ProcessedMessageRecord[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM processed_messages
-      WHERE processedAt >= ? AND processedAt <= ?
-      ORDER BY processedAt DESC
-    `);
+    const messages = this.readJson(this.messagesFile);
 
-    const rows = stmt.all(
-      startDate.getTime(),
-      endDate.getTime()
-    ) as any[];
-
-    return rows.map((row) => ({
-      messageId: row.messageId,
-      threadId: row.threadId,
-      processedAt: new Date(row.processedAt),
-      category: row.category as EmailCategory,
-      categoryClusters: row.categoryClusters
-        ? JSON.parse(row.categoryClusters)
-        : undefined,
-      summarized: row.summarized === 1,
-      calendarEventId: row.calendarEventId,
-      labelsApplied: JSON.parse(row.labelsApplied),
-    }));
+    return messages
+      .filter((m: any) => {
+        const msgDate = new Date(m.processedAt);
+        return msgDate >= startDate && msgDate <= endDate;
+      })
+      .sort(
+        (a: any, b: any) =>
+          new Date(b.processedAt).getTime() -
+          new Date(a.processedAt).getTime()
+      )
+      .map((m: any) => ({
+        messageId: m.messageId,
+        threadId: m.threadId,
+        processedAt: new Date(m.processedAt),
+        category: m.category as EmailCategory,
+        categoryClusters: m.categoryClusters,
+        summarized: m.summarized,
+        calendarEventId: m.calendarEventId,
+        labelsApplied: m.labelsApplied,
+      }));
   }
 
   /**
-   * Close database connection
+   * Close database connection (no-op for JSON store)
    */
   close(): void {
-    this.db.close();
+    // JSON store doesn't need explicit closing
   }
 }

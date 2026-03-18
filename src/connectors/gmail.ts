@@ -68,8 +68,8 @@ export class GmailConnector {
     this.stateStore.storeOAuthToken(
       "gmail",
       tokens.access_token!,
-      tokens.refresh_token,
-      tokens.expiry_date,
+      tokens.refresh_token ?? undefined,
+      tokens.expiry_date ?? undefined,
       scope
     );
   }
@@ -98,8 +98,8 @@ export class GmailConnector {
     this.stateStore.storeOAuthToken(
       "gmail",
       newCredentials.access_token!,
-      newCredentials.refresh_token,
-      newCredentials.expiry_date,
+      newCredentials.refresh_token ?? undefined,
+      newCredentials.expiry_date ?? undefined,
       scope
     );
   }
@@ -157,14 +157,14 @@ export class GmailConnector {
       return header?.value || "";
     };
 
-    const from = getHeader("from");
-    const subject = getHeader("subject");
-    const receivedStr = getHeader("date");
-    const to = getHeader("to")
+    const from = getHeader("from") || "unknown@sender.com";
+    const subject = getHeader("subject") || "(No Subject)";
+    const receivedStr = getHeader("date") || new Date().toISOString();
+    const to = (getHeader("to") || "")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
-    const cc = getHeader("cc")
+    const cc = (getHeader("cc") || "")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
@@ -189,11 +189,11 @@ export class GmailConnector {
       body = Buffer.from(message.payload.body.data, "base64").toString("utf-8");
     }
 
-    const snippet = message.snippet || body.substring(0, 200);
-    const hasInvitation = message.payload.mimeType?.includes("multipart/alternative") &&
+    const snippet = message.snippet || body.substring(0, 200) || "";
+    const hasInvitation = (message.payload.mimeType?.includes("multipart/alternative") &&
       (body.includes("BEGIN:VCALENDAR") ||
-       getHeader("content-type").includes("text/calendar") ||
-       hasIcsAttachment);
+       (getHeader("content-type") || "").includes("text/calendar") ||
+       hasIcsAttachment)) || false;
 
     return {
       id: messageId,
@@ -208,7 +208,7 @@ export class GmailConnector {
       labels: message.labelIds || [],
       hasInvitation,
       hasIcsAttachment,
-      mimeType: message.payload.mimeType,
+      mimeType: message.payload.mimeType ?? undefined,
       headers: Object.fromEntries(headers.map((h) => [h.name!, h.value!])),
     };
   }

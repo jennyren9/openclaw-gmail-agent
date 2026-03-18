@@ -58,7 +58,7 @@ async function runDigest(dryRun: boolean): Promise<void> {
   const config = getConfig();
 
   // Initialize state store
-  const stateStore = new StateStore(config.databasePath);
+  const stateStore = new StateStore();
 
   // Check if we have OAuth tokens
   const gmailToken = stateStore.getOAuthToken("gmail");

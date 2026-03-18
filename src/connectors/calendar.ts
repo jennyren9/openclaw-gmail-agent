@@ -58,8 +58,8 @@ export class CalendarConnector {
     this.stateStore.storeOAuthToken(
       "calendar",
       tokens.access_token!,
-      tokens.refresh_token,
-      tokens.expiry_date,
+      tokens.refresh_token ?? undefined,
+      tokens.expiry_date ?? undefined,
       ["https://www.googleapis.com/auth/calendar"]
     );
   }
@@ -80,8 +80,8 @@ export class CalendarConnector {
     this.stateStore.storeOAuthToken(
       "calendar",
       newCredentials.access_token!,
-      newCredentials.refresh_token,
-      newCredentials.expiry_date,
+      newCredentials.refresh_token ?? undefined,
+      newCredentials.expiry_date ?? undefined,
       ["https://www.googleapis.com/auth/calendar"]
     );
   }
@@ -117,6 +117,8 @@ export class CalendarConnector {
       eventBody.description =
         (eventBody.description ? eventBody.description + "\n\n" : "") +
         `Source: Gmail message ${event.messageId}`;
+    } else {
+      eventBody.description = eventBody.description || undefined;
     }
 
     const res = await this.calendar.events.insert({

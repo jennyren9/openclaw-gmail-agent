@@ -140,9 +140,6 @@ export interface AgentConfig {
   digestTimezone: string;
   emailLookbackHours: number;
   
-  // Database
-  databasePath: string;
-  
   // Feature flags
   markLowPriorityAsRead: boolean;
   markFyiAsReadAfterDigest: boolean;

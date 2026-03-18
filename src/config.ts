@@ -1,5 +1,4 @@
 import * as dotenv from "dotenv";
-import path from "path";
 import { AgentConfig } from "./types/index.js";
 
 // Load .env file
@@ -34,9 +33,6 @@ function loadConfig(): AgentConfig {
     digestSchedule: process.env.DIGEST_SCHEDULE || "0 8 * * *",
     digestTimezone: process.env.DIGEST_TIMEZONE || "America/Los_Angeles",
     emailLookbackHours: parseInt(process.env.EMAIL_LOOKBACK_HOURS || "24", 10),
-    databasePath:
-      process.env.DATABASE_PATH ||
-      path.join(process.cwd(), "data", "openclaw.db"),
     markLowPriorityAsRead:
       process.env.MARK_LOW_PRIORITY_AS_READ !== "false",
     markFyiAsReadAfterDigest:
